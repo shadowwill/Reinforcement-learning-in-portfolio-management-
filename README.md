@@ -40,7 +40,7 @@ The environment provides supports for easily testing different reinforcement lea
 }
 ```
 
-Download stock data in shenzhen and shanghai stock market in the given period in Day(D) frequency. Options: hours, minutes
+Download stock data in Shenzhen and Shanghai stock market in the given period in Day(D) frequency. Options: hours, minutes
 ```
 python main.py --mode=download_data
 ```
