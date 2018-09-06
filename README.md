@@ -71,7 +71,7 @@ python main.py --mode=test
 + APV under different feature combinations
   ![features_reward](result/features_reward.png)
 
-**The other results can be found in our report: **[**English Version**](https://arxiv.org/abs/1808.09940) and [**Chinese Version**](https://github.com/qq303067814/Reinforcement-learning-in-portfolio-management-/blob/master/report/%E6%B7%B1%E5%BA%A6%E5%BC%BA%E5%8C%96%E5%AD%A6%E4%B9%A0%E5%9C%A8%E8%B5%84%E4%BA%A7%E9%85%8D%E7%BD%AE%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8.pdf).
+**The other results can be found in our report: ** [**English Version**](https://arxiv.org/abs/1808.09940) and [**Chinese Version**](https://github.com/qq303067814/Reinforcement-learning-in-portfolio-management-/blob/master/report/%E6%B7%B1%E5%BA%A6%E5%BC%BA%E5%8C%96%E5%AD%A6%E4%B9%A0%E5%9C%A8%E8%B5%84%E4%BA%A7%E9%85%8D%E7%BD%AE%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8.pdf).
 
 
 
