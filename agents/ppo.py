@@ -97,6 +97,7 @@ class PPO(object):
             self.tfdc_r = tf.placeholder(tf.float32, [None, 1], 'discounted_r')
             self.advantage = self.tfdc_r - self.v
             self.closs = tf.reduce_mean(tf.square(self.advantage))
+
             # Optimization Op
             global_step = tf.Variable(0, trainable=False)
             C_learning_rate = tf.train.exponential_decay(C_LR, global_step,
@@ -177,9 +178,9 @@ class PPO(object):
     def _build_anet(self, name, trainable):
         with tf.variable_scope(name):
             input=con2d(self.tfs,'critic',trainable)[:,:,0,0]
-            l1 = dense(input, 100,'relu', 'critic',trainable)
-            mu = dense(l1, self.M, 'tanh', 'critic',trainable)
-            sigma =dense(l1, self.M, 'softplus','critic',trainable)
+            l1 = dense(input, 100,'relu', 'actor',trainable)
+            mu = dense(l1, self.M, 'tanh', 'actor',trainable)
+            sigma =dense(l1, self.M, 'softplus','actor',trainable)
             norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
         params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=name)
         return norm_dist, params

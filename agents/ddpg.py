@@ -69,7 +69,7 @@ class StockActor:
 
         #Initial hyperparaters
         self.tau=10e-3
-        self.learning_rate=10e-2
+        self.learning_rate=10e-4
         self.gamma=0.99
         self.batch_size=batch_size
 
@@ -83,8 +83,8 @@ class StockActor:
 
         self.init_input()
         self.scopes=['online/actor','target/actor']
-        self.inputs,self.out=self.build_actor(predictor,self.scopes[0],True)
-        self.target_inputs, self.target_out=self.build_actor(predictor,self.scopes[1],False)
+        self.inputs,self.out,self.previous_action=self.build_actor(predictor,self.scopes[0],True)
+        self.target_inputs, self.target_out,self.target_previous_action=self.build_actor(predictor,self.scopes[1],False)
 
         self.init_op()
 
@@ -121,34 +121,38 @@ class StockActor:
     def build_actor(self,predictor,scope,trainable):
         with tf.name_scope(scope):
             inputs=tf.placeholder(tf.float32,shape=[None]+[self.M]+[self.L]+[self.N],name='input')
-            x=build_predictor(inputs,predictor,5,scope,trainable=trainable)
+            x=build_predictor(inputs,predictor,1,scope,trainable=trainable)
+            actions_previous=tf.placeholder(tf.float32,shape=[None]+[self.M])
 
-            t1_w = tf.Variable(tf.truncated_normal([int(x.shape[1]), 64], stddev=0.15), name='t1_w')
-            t1_b = tf.Variable(tf.constant(0.1, shape=[64]), name='t1_b')
-            net=tf.matmul(x,t1_w)+t1_b
+            t1_w = tf.Variable(tf.truncated_normal([int(x.shape[1]), 32], stddev=0.15), name='t1_w')
+            t1_b = tf.Variable(tf.constant(0.0, shape=[32]), name='t1_b')
+            t1=tf.matmul(x,t1_w)+t1_b
+            #t1=tf.nn.dropout(t1, keep_prob=0.1)
 
-            net=tf.layers.batch_normalization(net)
-            net=tf.nn.relu(net)
-            net=tf.nn.dropout(net,keep_prob=0.5)
+            t2_w = tf.Variable(tf.truncated_normal([int(actions_previous.shape[1]), 32], stddev=0.15))
+            t2_b = tf.Variable(tf.constant(0.0, shape=[32]))
+            t2 = tf.matmul(actions_previous, t2_w) + t2_b
+            #t2=tf.nn.dropout(t2, keep_prob=0.1)
 
+            net = tf.add(t1, t2)
             w_init=tf.random_uniform_initializer(-0.003,0.003)
             out=tf.layers.dense(net,self.M,activation=tf.nn.softmax,kernel_initializer=w_init)
 
-            return inputs,out
+            return inputs,out,actions_previous
 
-    def train(self,inputs,a_gradient):
-        self.sess.run(self.optimize,feed_dict={self.inputs:inputs,self.action_gradient:a_gradient})
+    def train(self,inputs,a_gradient,a_previous):
+        self.sess.run(self.optimize,feed_dict={self.inputs:inputs,self.action_gradient:a_gradient,self.previous_action:a_previous})
 
     def pre_train(self,s,a):
         pre_loss,_,_=self.sess.run([self.pre_loss,self.out,self.pre_optimize],feed_dict={self.inputs:s,self.precise_action:a})
         return pre_loss
 
 
-    def predict(self,inputs):
-        return self.sess.run(self.out,feed_dict={self.inputs:inputs})
+    def predict(self,inputs,a_previous):
+        return self.sess.run(self.out,feed_dict={self.inputs:inputs,self.previous_action:a_previous})
 
-    def predict_target(self,inputs):
-        return self.sess.run(self.target_out,feed_dict={self.target_inputs:inputs})
+    def predict_target(self,inputs,target_previous_action):
+        return self.sess.run(self.target_out,feed_dict={self.target_inputs:inputs,self.target_previous_action:target_previous_action})
 
     def update_target_network(self):
         self.sess.run(self.update)
@@ -169,8 +173,8 @@ class StockCritic:
         self.N=N
 
         self.scopes=['online/critic','target/critic']
-        self.target_inputs, self.target_actions, self.target_out = self.build_critic(predictor,self.scopes[1],True)
-        self.inputs,self.actions,self.out=self.build_critic(predictor,self.scopes[0],False)
+        self.target_inputs, self.target_actions, self.target_out,self.target_previous_action = self.build_critic(predictor,self.scopes[1],False)
+        self.inputs,self.actions,self.out,self.previous_action=self.build_critic(predictor,self.scopes[0],True)
 
 
 
@@ -204,50 +208,52 @@ class StockCritic:
         with tf.name_scope(scope):
             states=tf.placeholder(tf.float32,shape=[None]+[self.M,self.L,self.N])
             actions=tf.placeholder(tf.float32,shape=[None]+[self.M])
+            actions_previous=tf.placeholder(tf.float32,shape=[None]+[self.M])
             net = build_predictor(states, predictor,5,scope,trainable)
 
             t1_w=tf.Variable(tf.truncated_normal([int(net.shape[1]),64],stddev=0.15))
             t1_b=tf.Variable(tf.constant(0.0,shape=[64]))
             t1=tf.matmul(net,t1_w)+t1_b
+            t1=tf.nn.dropout(t1, keep_prob=0.2)
 
 
             t2_w = tf.Variable(tf.truncated_normal([int(actions.shape[1]), 64], stddev=0.15))
             t2_b = tf.Variable(tf.constant(0.0, shape=[64]))
             t2 = tf.matmul(actions, t2_w) + t2_b
+            t2=tf.nn.dropout(t2, keep_prob=0.2)
 
 
-            net=tf.add(t1,t2)
+            t3_w = tf.Variable(tf.truncated_normal([int(actions.shape[1]), 64], stddev=0.15))
+            t3_b = tf.Variable(tf.constant(0.0, shape=[64]))
+            t3 = tf.matmul(actions_previous, t3_w) + t3_b
+
+            net = tf.add(t1, t2)
+            net = tf.add(net, t3)
             net=tf.layers.batch_normalization(net)
 
 
             net = tf.nn.relu(net)
             net=tf.nn.dropout(net,keep_prob=0.5)
 
-            t3_w=tf.Variable(tf.truncated_normal([64, 64], stddev=0.15))
-            t3_b=tf.Variable(tf.constant(0.0, shape=[1]))
-            out=tf.matmul(net,t3_w)+t3_b
-            out=tf.nn.relu(out)
-            out=tf.nn.dropout(out,keep_prob=0.5)
+            out = tf.layers.dense(net, 1, kernel_initializer=tf.random_uniform_initializer(-0.003, 0.003))
 
-            out = tf.layers.dense(out, 1, kernel_initializer=tf.random_uniform_initializer(-0.003, 0.003))
+        return states,actions,out,actions_previous
 
-        return states,actions,out
-
-    def train(self,inputs,actions,predicted_q_value):
-        critic_loss,q_value,_=self.sess.run([self.loss,self.out,self.optimize],feed_dict={self.inputs:inputs,self.actions:actions,self.predicted_q_value:predicted_q_value})
+    def train(self,inputs,actions,predicted_q_value,a_previous):
+        critic_loss,q_value,_=self.sess.run([self.loss,self.out,self.optimize],feed_dict={self.inputs:inputs,self.actions:actions,self.predicted_q_value:predicted_q_value,self.previous_action:a_previous})
         return critic_loss,q_value
 
     def predict(self,inputs,actions):
         return self.sess.run(self.out,feed_dict={self.inputs:inputs,self.actions:actions})
 
-    def preditc_target(self,inputs,actions):
-        return self.sess.run(self.target_out,feed_dict={self.target_inputs:inputs,self.target_actions:actions})
+    def preditc_target(self,inputs,actions,a_previous):
+        return self.sess.run(self.target_out,feed_dict={self.target_inputs:inputs,self.target_actions:actions,self.target_previous_action:a_previous})
 
     def update_target_network(self):
         self.sess.run(self.update)
 
-    def action_gradients(self,inputs,actions):
-        return self.sess.run(self.action_grads,feed_dict={self.inputs:inputs,self.actions:actions})
+    def action_gradients(self,inputs,actions,a_previous):
+        return self.sess.run(self.action_grads,feed_dict={self.inputs:inputs,self.actions:actions,self.previous_action:a_previous})
 
 def  build_summaries():
     critic_loss=tf.Variable(0.)
@@ -270,7 +276,7 @@ class DDPG:
     def __init__(self,predictor,M,L,N,name,load_weights,trainable):
         # Initial buffer
         self.buffer = list()
-        self.buffer_size = 10000
+        self.buffer_size = 640
         self.batch_size = 32
         self.name=name
 
@@ -290,7 +296,7 @@ class DDPG:
         if load_weights=='True':
             print("Loading Model")
             try:
-                checkpoint = tf.train.get_checkpoint_state(self.name)
+                checkpoint = tf.train.get_checkpoint_state('./saved_network/DDPG')
                 if checkpoint and checkpoint.model_checkpoint_path:
                     self.saver.restore(self.sesson, checkpoint.model_checkpoint_path)
                     print("Successfully loaded:", checkpoint.model_checkpoint_path)
@@ -303,23 +309,23 @@ class DDPG:
         else:
             self.sesson.run(tf.global_variables_initializer())
 
-        if trainable:
+        if trainable=='True':
             # Initial summary
             self.summary_writer = tf.summary.FileWriter('./summary/DDPG', self.sesson.graph)
             self.summary_ops, self.summary_vars = build_summaries()
 
     #online actor
-    def predict(self,s):
-        return self.actor.predict(s)
+    def predict(self,s,a_previous):
+        return self.actor.predict(s,a_previous)
 
     #target actor
-    def test_predict(self,s):
-        return self.actor.predict_target(s)
+    # def test_predict(self,s):
+    #     return self.actor.predict_target(s)
 
-    def save_transition(self,s,w,r,not_terminal,s_next,action_precise):
+    def save_transition(self,s,w,r,not_terminal,s_next,action_previous):
         if len(self.buffer)>self.buffer_size:
             self.buffer.pop(0)
-        self.buffer.append((s,w[0],r,not_terminal,s_next,action_precise))
+        self.buffer.append((s,w[0],r,not_terminal,s_next,action_previous))
 
     def train(self,method,epoch):
         info = dict()
@@ -327,31 +333,29 @@ class DDPG:
             info["critic_loss"],info["q_value"],info["actor_loss"]= 0,0,0
             return info
 
-
-        s,a,r,not_terminal,s_next,a_precise=self.get_transition_batch()
-        target_q=self.critic.preditc_target(s_next,self.actor.predict_target(s_next))
-
+        s,a,r,not_terminal,s_next,a_previous=self.get_transition_batch()
+        target_q=self.critic.preditc_target(s_next,self.actor.predict_target(s_next,a_previous),a_previous)
 
         y_i=[]
         for i in range(self.batch_size):
                 y_i.append(r[i]+not_terminal[i]*self.gamma*target_q[i])
 
-        critic_loss,q_value=self.critic.train(s,a,np.reshape(y_i,(-1,1)))
+        critic_loss,q_value=self.critic.train(s,a,np.reshape(y_i,(-1,1)),a_previous)
         info["critic_loss"]=critic_loss
         info["q_value"]=np.amax(q_value)
 
         if method=='model_free':
-            a_outs=self.actor.predict(s)
-            grads=self.critic.action_gradients(s,a_outs)
-            self.actor.train(s,grads[0])
+            a_outs=self.actor.predict(s,a_previous)
+            grads=self.critic.action_gradients(s,a_outs,a_previous)
+            self.actor.train(s,grads[0],a_previous)
         elif method=='model_based':
             if epoch<=100:
-                actor_loss=self.actor.pre_train(s, a_precise)
+                actor_loss=self.actor.pre_train(s, a_previous)
                 info["actor_loss"]=actor_loss
             else:
-                a_outs = self.actor.predict(s)
-                grads = self.critic.action_gradients(s, a_outs)
-                self.actor.train(s,grads[0])
+                a_outs = self.actor.predict(s,a_previous)
+                grads = self.critic.action_gradients(s, a_outs,a_previous)
+                self.actor.train(s,grads[0],a_previous)
 
 
         self.actor.update_target_network()
@@ -366,8 +370,8 @@ class DDPG:
         r = [data[2] for data in minibatch]
         not_terminal = [data[3] for data in minibatch]
         s_next = [data[4][0] for data in minibatch]
-        action_precise=[data[5][0] for data in minibatch]
-        return s, a, r, not_terminal, s_next,action_precise
+        action_previous=[data[5][0] for data in minibatch]
+        return s, a, r, not_terminal, s_next,action_previous
 
 
     def save_model(self,epoch):
