@@ -24,9 +24,9 @@ class PG:
         self.global_step = tf.Variable(0, trainable=False)
 
 
-        self.state,self.w_previous,self.out=self.build_net()
+        self.state,self.w_previous,self.out=self.build_net()  #self.out:最新权重
         self.future_price=tf.placeholder(tf.float32,[None]+[self.M])
-        self.pv_vector=tf.reduce_sum(self.out*self.future_price,reduction_indices=[1])*self.pc()
+        self.pv_vector=tf.reduce_sum(self.out*self.future_price,reduction_indices=[1])*self.pc() ##self.pc():交易成本
         self.profit=tf.reduce_prod(self.pv_vector)
         self.loss=-tf.reduce_mean(tf.log(self.pv_vector))
         self.optimize=tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,global_step=self.global_step)
@@ -100,7 +100,10 @@ class PG:
     # 学习更新参数 (有改变)
     def train(self):
         s,p,a,a_previous=self.get_buffer()
-        profit,_=self.sesson.run([self.profit,self.optimize],feed_dict={self.state:s,self.out:np.reshape(a,(-1,self.M)),self.future_price:np.reshape(p,(-1,self.M)),self.w_previous:np.reshape(a_previous,(-1,self.M))})
+        profit,_=self.sesson.run([self.profit,self.optimize],feed_dict={self.state:s,
+                                                                        self.out:np.reshape(a,(-1,self.M)),
+                                                                        self.future_price:np.reshape(p,(-1,self.M)),
+                                                                        self.w_previous:np.reshape(a_previous,(-1,self.M))})
         print(profit)
         self.save_model()
 
