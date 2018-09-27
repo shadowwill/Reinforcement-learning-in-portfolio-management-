@@ -27,7 +27,7 @@ class Environment:
         if market=='China':
             data["code"]=data["code"].apply(fill_zeros)
 
-        data=data.loc[data["code"].isin(codes)]
+        data=data.loc[data["code"].isin(codes)]    #选定股票池
         data[features]=data[features].astype(float)
 
         # 生成有效时间
@@ -91,7 +91,8 @@ class Environment:
             asset_data=asset_data.fillna(method='ffill',axis=1)#根据收盘价填充其他值
             #***********************open as preclose*******************#
             #asset_data=asset_data.dropna(axis=0,how='any')
-            asset_data=asset_data.drop(columns=['code'])
+            asset_data=asset_data.drop('code',axis=1)
+            #asset_data=asset_data.drop(columns=['code'])
             asset_dict[str(asset)]=asset_data
 
 
@@ -122,9 +123,10 @@ class Environment:
                 V_PB=np.ones(self.L)
 
             y=np.ones(1)
+            state=[]
             for asset in codes:
                 asset_data=asset_dict[str(asset)]
-                V_close = np.vstack((V_close, asset_data.ix[t - self.L - 1:t - 1, 'close']))
+                V_close = np.vstack((V_close, asset_data.ix[t - self.L - 1:t - 1, 'close']))  #V_close:过去L时间内M个样本股票的收盘价矩阵
                 if 'high' in features:
                     V_high=np.vstack((V_high,asset_data.ix[t-self.L-1:t-1,'high']))
                 if 'low' in features:
@@ -144,25 +146,26 @@ class Environment:
                 if 'PB' in features:
                     V_PB=np.vstack((V_PB,asset_data.ix[t-self.L-1:t-1,'PB']))
                 y=np.vstack((y,asset_data.ix[t,'close']/asset_data.ix[t-1,'close']))
-            state = V_close
+            state.append(V_close)  #state:存储股票特征(close,high等，一个元素对应一个特征)
             if 'high' in features:
-                state = np.stack((state,V_high), axis=2)
+                state.append(V_high)
             if 'low' in features:
-                state = np.stack((state,V_low), axis=2)
+                state.append(V_low)
             if 'open' in features:
-                state = np.stack((state,V_open), axis=2)
+                state.append(V_open)
             if 'TV1' in features:
-                state = np.stack((state,V_TV1), axis=2)
+                state.append(V_TV1)
             if 'TV2' in features:
-                state = np.stack((state,V_TV2), axis=2)
+                state.append(V_TV2)
             if 'DA' in features:
-                state = np.stack((state,V_DA), axis=2)
+                state.append(V_DA)
             if 'TR' in features:
-                state = np.stack((state,V_TR), axis=2)
+                state.append(V_TR)
             if 'PE' in features:
-                state = np.stack((state,V_PE), axis=2)
+                state.append(V_PE)
             if 'PB' in features:
-                state = np.stack((state,V_PB), axis=2)
+                state.append(V_PB)
+            state=np.stack(state,axis=1)  #state:存储股票特征(close,high等，一个元素对应一个股票)
             state = state.reshape(1, self.M, self.L, self.N)
             self.states.append(state)
             self.price_history.append(y)
@@ -177,23 +180,25 @@ class Environment:
         if self.FLAG:
             not_terminal = 1
             price = self.price_history[self.t]
+            #price=price+np.stack(np.random.normal(0,0.002,(1,len(price))),axis=1)
             mu = self.cost * (np.abs(w2[0][1:] - w1[0][1:])).sum()
 
-            std = self.states[self.t - 1][0].std(axis=0, ddof=0)
-            w2_std = (w2[0]* std).sum()
+            # std = self.states[self.t - 1][0].std(axis=0, ddof=0)
+            # w2_std = (w2[0]* std).sum()
 
-            #adding risk
-            gamma=0.00
-            risk=gamma*w2_std
+            # #adding risk
+            # gamma=0.00
+            # risk=gamma*w2_std
 
+            risk=0
             r = (np.dot(w2, price)[0] - mu)[0]
 
 
             reward = np.log(r + eps)
 
-            w2 = w2 / (np.dot(w2, price) + eps)
+            w2 = np.multiply(w2, price.T) / (np.dot(w2, price) + eps)
             self.t += 1
-            if self.t == len(self.states) - 1:
+            if self.t >= len(self.states) - 1:
                 not_terminal = 0
                 self.reset()
 

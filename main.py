@@ -30,7 +30,6 @@ class StockTrader():
         self.r_history = []
         self.w_history = []
         self.p_history = []
-
         self.noise = OrnsteinUhlenbeckActionNoise(mu=np.zeros(M))
 
     def update_summary(self,loss,r,q_value,actor_loss,w,p):
@@ -55,8 +54,8 @@ class StockTrader():
     def print_result(self,epoch,agent):
         self.total_reward=math.exp(self.total_reward) * 100
         print('*-----Episode: {:d}, Reward:{:.6f}%,  ep_ave_max_q:{:.2f}, actor_loss:{:2f}-----*'.format(epoch, self.total_reward,self.ep_ave_max_q,self.actor_loss))
-        agent.write_summary(self.loss, self.total_reward,self.ep_ave_max_q,self.actor_loss, epoch)
-        agent.save_model(epoch)
+        #agent.write_summary(self.loss, self.total_reward,self.ep_ave_max_q,self.actor_loss, epoch)
+        agent.save_model()
 
     def plot_result(self):
         pd.Series(self.wealth_history).plot()
@@ -75,18 +74,24 @@ def traversal(stocktrader,agent,env,epoch,noise_flag,framework,method,trainable)
     info = env.step(None,None)
     r,contin,s,w1,p,risk=parse_info(info)
     contin=1
+    t=0
+
     while contin:
-        w2 = agent.predict(s)
+        w2 = agent.predict(s,w1)
         if noise_flag=='True':
             w2=stocktrader.action_processor(w2,(epochs-epoch)/epochs)
+
         env_info = env.step(w1, w2)
         r, contin, s_next, w1, p,risk = parse_info(env_info)
 
-        agent.save_transition(s, w2, r-risk, contin, s_next, w1)
+        if framework=='PG':
+            agent.save_transition(s,p,w2,w1)
+        else:
+            agent.save_transition(s, w2, r-risk, contin, s_next, w1)
         loss, q_value,actor_loss=0,0,0
 
         if framework=='DDPG':
-            if trainable=="True":
+            if not contin and trainable=="True":
                 agent_info= agent.train(method,epoch)
                 loss, q_value=agent_info["critic_loss"],agent_info["q_value"]
                 if method=='model_based':
@@ -99,12 +104,58 @@ def traversal(stocktrader,agent,env,epoch,noise_flag,framework,method,trainable)
                 if method=='model_based':
                     actor_loss=agent_info["actor_loss"]
 
+        elif framework=='PG':
+            if not contin and trainable=="True":
+                print(w2)
+                agent.train()
+
         stocktrader.update_summary(loss,r,q_value,actor_loss,w2,p)
         s = s_next
+        t=t+1
 
 
+def backtest(agent,env):
+    print("starting to backtest......")
+    from agents.UCRP import UCRP
+    from agents.Winner import WINNER
+    from agents.Losser import LOSSER
 
+    agents=[]
+    #agents.append(agent)
+    #agents.append(WINNER())
+    agents.append(UCRP())
+    #agents.append(LOSSER())
+    #labels=['PG','Winner','UCRP','Losser']
+    labels=['UCRP']
 
+    wealths_result=[]
+    rs_result=[]
+    for i,agent in enumerate(agents):
+        info = env.step(None, None)
+        r, contin, s, w1, p, risk = parse_info(info)
+        contin = 1
+        wealth=10000
+        wealths = [wealth]
+        rs=[1]
+        while contin:
+            w2 = agent.predict(s, w1)
+            if i==0:
+                print(w2)
+            env_info = env.step(w1, w2)
+            r, contin, s_next, w1, p, risk = parse_info(env_info)
+            wealth=wealth*math.exp(r)
+            rs.append(math.exp(r)-1)
+            wealths.append(wealth)
+            s=s_next
+        print('finish one agent')
+        wealths_result.append(wealths)
+        rs_result.append(rs)
+
+    for i in range(len(agents)):
+        plt.plot(wealths_result[i],label=labels[i])
+        print(labels[i],'   ',np.mean(rs_result[i]),'   ',np.std(rs_result[i]))
+    plt.legend()
+    plt.show()
 
 def parse_config(config,mode):
     codes = config["session"]["codes"]
@@ -166,6 +217,11 @@ def session(config,mode):
         from agents.ppo import PPO
         agent = PPO(predictor, len(codes) + 1, int(window_length), len(features), '-'.join(agent_config), reload_flag,trainable)
 
+    elif framework == 'PG':
+        print("*-----------------Loading PG Agent---------------------*")
+        from agents.pg import PG
+        agent = PG(len(codes) + 1, int(window_length), len(features), '-'.join(agent_config), reload_flag,trainable)
+
     stocktrader=StockTrader()
 
     if mode=='train':
@@ -181,14 +237,12 @@ def session(config,mode):
             if plot_flag=='True':
                 stocktrader.plot_result()
 
+            agent.reset_buffer()
             stocktrader.print_result(epoch,agent)
             stocktrader.reset()
 
     elif mode=='test':
-        traversal(stocktrader, agent, env, 1, noise_flag,framework,method,trainable)
-        stocktrader.write(1)
-        stocktrader.plot_result()
-        stocktrader.print_result(1, agent)
+        backtest(agent, env)
 
 def build_parser():
     parser = ArgumentParser(description='Provide arguments for training different DDPG or PPO models in Portfolio Management')
@@ -200,7 +254,6 @@ def build_parser():
 def main():
     parser = build_parser()
     args=vars(parser.parse_args())
-    print(args)
     with open('config.json') as f:
         config=json.load(f)
         if args['mode']=='download':

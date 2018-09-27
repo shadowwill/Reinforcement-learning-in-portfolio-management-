@@ -12,4 +12,6 @@ class UCRP:
     def predict(self,s,a):
         weights=np.ones(len(a[0]))/len(a[0])
         weights=weights[None,:]
+        #weights = np.concatenate((np.zeros(1), np.ones(3)/3))
+        #weights=weights[None,:]      
         return weights

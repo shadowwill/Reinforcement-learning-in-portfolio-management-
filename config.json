@@ -6,17 +6,17 @@
 		"ktype":"D"
 	},
 	"session":{
-		"start_date":"2015-01-05",
-		"end_date":"2017-01-01",
-		"market_types":"America",
-	    "codes":["AAPL","ADBE","BABA","SNE","V"],
-		"features":["close"],
-		"agents":["CNN","DDPG","3"],
+		"start_date":"2007-01-05",
+		"end_date":"2018-05-21",
+		"market_types":"China",
+	    "codes":["600679","600962","600821", "000002", "000011", "000048", "000151", "000725", "000862", "000985", "002066", "600000", "600326", "600662", "600698", "600876", "600962"],
+		"features":["open", "low", "close","high", "TR", "PB", "PE"],
+		"agents":["CNN","PG","30"],
 		"epochs":"10000",
 		"noise_flag":"False",
 		"record_flag":"False",
 		"plot_flag":"False",
-		"reload_flag":"False",
+		"reload_flag":"True",
 		"trainable":"True",
 		"method":"model_free"
 	}
