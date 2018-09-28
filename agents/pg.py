@@ -7,13 +7,14 @@ import tensorflow as tf
 import tflearn
 import numpy as np
 import util
+import math
 
 class PG:
     def __init__(self,M,L,N,name,load_weights,trainable):
         # Initial buffer
         self.buffer = list()
         self.name = name
-        self.learning_rate=10e-3
+        self.learning_rate=10e-4
 
         # Build up models
         self.sesson = tf.Session()
@@ -24,16 +25,19 @@ class PG:
         self.N = N
         self.global_step = tf.Variable(0, trainable=False)
 
-
-        self.state,self.w_previous,self.out=self.build_net()  #self.out:最新权重
+        self.index_weights = tf.constant(np.ones(self.M) / self.M, dtype=tf.float32)
+        self.state,self.w_previous,self.out, =self.build_net()  #self.out:最新权重
         self.future_price=tf.placeholder(tf.float32,[None]+[self.M])
         self.pv_vector=tf.reduce_sum(self.out*self.future_price,reduction_indices=[1])*self.pc() ##self.pc():交易成本
         self.profit=tf.reduce_prod(self.pv_vector)
-        #self.loss=-tf.reduce_mean(tf.log(self.pv_vector))
-        self.loss=-tf.reduce_mean(tf.log(self.pv_vector))/util.reduce_std(tf.log(self.pv_vector))
-        self.optimize=tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss,global_step=self.global_step)
+        self.loss=-tf.reduce_mean(tf.log(self.pv_vector))
+        #self.loss=-tf.reduce_mean(tf.log(self.pv_vector))/util.reduce_std(tf.log(self.pv_vector))+ 0.11 * self.tracking_error()
 
-        # Initial saver
+        self.maxbias = self.max_bias()
+        #self.loss = tf.cond(self.maxbias > tf.constant(0.055), lambda: -tf.reduce_mean(tf.log(self.pv_vector)) / util.reduce_std(tf.log(self.pv_vector))+10, lambda:-tf.reduce_mean(tf.log(self.pv_vector)) / util.reduce_std(tf.log(self.pv_vector)))
+        self.optimize = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss, global_step=self.global_step)
+
+            # Initial saver
         self.saver = tf.train.Saver(max_to_keep=10)
         if load_weights == 'True':
             print("Loading Model")
@@ -85,15 +89,25 @@ class PG:
         network=tf.layers.flatten(network)
         w_init = tf.random_uniform_initializer(-0.003, 0.003)
         out = tf.layers.dense(network, self.M, activation=tf.nn.softmax, kernel_initializer=w_init)
+        
+
 
         return state,w_previous,out
+
+    def max_bias(self):
+        return tf.reduce_max(tf.abs(self.out[:,:]-self.index_weights[:]))
+
+    def tracking_error(self):
+        return tf.reduce_sum(tf.abs(self.out[:,:]-self.index_weights[:]),axis=1)
 
     def pc(self):
         return 1-tf.reduce_sum(tf.abs(self.out[:,1:]-self.w_previous[:,1:]),axis=1)*0.0025
 
     # 选行为 (有改变)
-    def predict(self,s,a_previous):
-        return self.sesson.run(self.out,feed_dict={self.state:s,self.w_previous:a_previous})
+    def predict(self, s, a_previous):
+        index_weight = np.array([[1 / self.M for i in range(self.M)]])
+        w = self.sesson.run(self.out,feed_dict={self.state:s,self.w_previous:a_previous})
+        return w# np.array([ index_weight[0][:] - (w[0][:] -  index_weight[0][:]) ])
 
     # 存储回合 transition (有改变)
     def save_transition(self, s, p, action,action_previous):
@@ -102,11 +116,16 @@ class PG:
     # 学习更新参数 (有改变)
     def train(self):
         s,p,a,a_previous=self.get_buffer()
-        loss,_=self.sesson.run([self.loss,self.optimize],feed_dict={self.state:s,
+        maxbias,loss,_=self.sesson.run([self.maxbias,self.loss,self.optimize],feed_dict={self.state:s,
                                                                         self.out:np.reshape(a,(-1,self.M)),
                                                                         self.future_price:np.reshape(p,(-1,self.M)),
                                                                         self.w_previous:np.reshape(a_previous,(-1,self.M))})
-        print(loss)
+        print(maxbias)
+        if maxbias > 0.1:
+            import sys
+            sys.exit()
+
+        #print(loss)
         self.save_model()
 
     def get_buffer(self):

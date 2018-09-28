@@ -10,6 +10,8 @@ import math
 from decimal import Decimal
 import matplotlib.pyplot as plt
 from agents.ornstein_uhlenbeck import OrnsteinUhlenbeckActionNoise
+import os
+import glob
 
 eps=10e-8
 epochs=0
@@ -71,7 +73,7 @@ def parse_info(info):
 
 
 def traversal(stocktrader,agent,env,epoch,noise_flag,framework,method,trainable):
-    info = env.step(None,None)
+    info = env.step(None, None)
     r,contin,s,w1,p,risk=parse_info(info)
     contin=1
     t=0
@@ -121,12 +123,12 @@ def backtest(agent,env):
     from agents.Losser import LOSSER
 
     agents=[]
-    #agents.append(agent)
+    agents.append(agent)
     #agents.append(WINNER())
     agents.append(UCRP())
     #agents.append(LOSSER())
     #labels=['PG','Winner','UCRP','Losser']
-    labels=['UCRP']
+    labels=['PG','UCRP']
 
     wealths_result=[]
     rs_result=[]
@@ -179,6 +181,8 @@ def parse_config(config,mode):
         reload_flag='True'
         trainable='False'
         method='model_free'
+        start_date = config["session"]["start_date_test"]
+        end_date = config["session"]["end_date_test"]
 
     print("*--------------------Training Status-------------------*")
     print('Codes:',codes)
@@ -199,10 +203,14 @@ def parse_config(config,mode):
     return codes,start_date,end_date,features,agent_config,market,predictor, framework, window_length,noise_flag, record_flag, plot_flag,reload_flag,trainable,method
 
 def session(config,mode):
+    if mode == 'train':
+        files = glob.glob('saved_network/PG/*')
+        for f in files:
+            os.remove(f)
+
     from data.environment import Environment
     codes, start_date, end_date, features, agent_config, market,predictor, framework, window_length,noise_flag, record_flag, plot_flag,reload_flag,trainable,method=parse_config(config,mode)
-    env = Environment(start_date, end_date, codes, features, int(window_length),market)
-
+    env = Environment(start_date, end_date, codes, features, int(window_length),market,mode)
 
     global M
     M=len(codes)+1
@@ -222,10 +230,10 @@ def session(config,mode):
         from agents.pg import PG
         agent = PG(len(codes) + 1, int(window_length), len(features), '-'.join(agent_config), reload_flag,trainable)
 
+
     stocktrader=StockTrader()
 
     if mode=='train':
-
         print("Training with {:d}".format(epochs))
         for epoch in range(epochs):
             print("Now we are at epoch", epoch)

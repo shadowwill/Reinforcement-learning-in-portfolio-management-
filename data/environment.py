@@ -9,6 +9,7 @@ import pandas as pd
 from math import log
 from datetime import datetime
 import time
+import pickle
 
 eps=10e-8
 
@@ -16,7 +17,7 @@ def fill_zeros(x):
     return '0'*(6-len(x))+x
 
 class Environment:
-    def __init__(self,start_date,end_date,codes,features,window_length,market):#,test_data,assets_list,M,L,N,start_date,end_date
+    def __init__(self,start_date,end_date,codes,features,window_length,market,mode):#,test_data,assets_list,M,L,N,start_date,end_date
 
         #preprocess parameters
         self.cost=0.0025
@@ -45,6 +46,22 @@ class Environment:
         asset_dict=dict()#每一个资产的数据
         datee=data.index.unique()
         self.date_len=len(datee)
+
+        if mode=='train':
+            states_file = 'states_train'
+            price_history_file = 'price_history_train'
+        elif mode=='test':
+            #states_file = 'states_train'
+            #price_history_file = 'price_history_train'
+            states_file = 'states_test'
+            price_history_file = 'price_history_test'
+
+
+        with open(states_file, "rb") as fp:  # Unpickling
+            self.states = pickle.load(fp)
+        with open(price_history_file, "rb") as fp:  # Unpickling
+            self.price_history = pickle.load(fp)
+        '''
         for asset in codes:
             asset_data=data[data["code"]==asset].reindex(datee).sort_index()#加入时间的并集，会产生缺失值pd.to_datetime(self.date_list)
             asset_data['close']=asset_data['close'].fillna(method='pad')
@@ -170,7 +187,15 @@ class Environment:
             self.states.append(state)
             self.price_history.append(y)
             t=t+1
+
+        with open(states_file, "wb") as fp:
+            pickle.dump(self.states, fp)
+        with open(price_history_file, "wb") as fp:
+            pickle.dump(self.price_history, fp)    
+        '''
         self.reset()
+
+
 
 
     def first_ob(self):
@@ -197,7 +222,7 @@ class Environment:
             reward = np.log(r + eps)
 
             w2 = np.multiply(w2, price.T) / (np.dot(w2, price) + eps)
-            self.t += 1
+            self.t += 5
             if self.t >= len(self.states) - 1:
                 not_terminal = 0
                 self.reset()
@@ -207,9 +232,15 @@ class Environment:
                     'weight vector': w2, 'price': price,'risk':risk}
             return info
         else:
+            '''
             info = {'reward': 0, 'continue': 1, 'next state': self.states[self.L + 1],
                     'weight vector': np.array([[1] + [0 for i in range(self.M-1)]]),
                     'price': self.price_history[self.L + 1],'risk':0}
+            '''
+            info = {'reward': 0, 'continue': 1, 'next state': self.states[self.L + 1],
+                    'weight vector': np.array([[1 / self.M for i in range(self.M)]]),
+                    'price': self.price_history[self.L + 1],'risk':0}
+
 
             self.FLAG=True
             return info
